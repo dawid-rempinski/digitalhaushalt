@@ -25,7 +25,8 @@ def _active_filters(df, FILTER_COLS):
         st.sidebar.multiselect(
             label=f"{col} ({len(opts)})",
             options=opts,
-            key=f"f_{col}"
+            key=f"f_{col}",
+            placeholder="Filterwert auswählen..."
         )
 
     for col in FILTER_COLS:

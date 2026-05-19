@@ -12,9 +12,9 @@ st.set_page_config(page_title="Digitalhaushalt Exploration", layout="wide", page
 df, T_TO_MRD, FILTER_COLS, num_cols, cat_cols, SOLL, IST = _data()
 
 st.sidebar.header("⚙️ Einstellungen")
+
 # ── SIDEBAR: Kennzahl ─────────────────────────────────────────────────────────
 metric = _metric(df)
-
 st.sidebar.markdown("---")
 
 # ── FILTER ────────────────────────────────────────────────────────────────────

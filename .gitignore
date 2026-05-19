@@ -1,6 +1,0 @@
-.venv/
-data/raw/
-misc/
-eda_playground.ipynb
-.DS_Store
-streamlit/pages/archive/
