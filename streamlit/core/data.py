@@ -1,10 +1,13 @@
 import pandas as pd
 import streamlit as st
+from pathlib import Path
 
 def _data():
     @st.cache_data
     def get_data():
-        df = pd.read_csv("../data/transformed/digitalhaushalt_transformed.csv")
+        BASE_DIR = Path(__file__).resolve().parents[2]
+        file_path = BASE_DIR / "data" / "transformed" / "digitalhaushalt_transformed.csv"
+        df = pd.read_csv(file_path)
         if "jahr" in df.columns:
             df["jahr"] = df["jahr"].astype(str)
         LABELS = {

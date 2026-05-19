@@ -4,3 +4,4 @@ misc/
 eda_playground.ipynb
 .DS_Store
 streamlit/pages/archive/
+__pycache__
