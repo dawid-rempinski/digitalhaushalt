@@ -2,6 +2,7 @@
 data/raw/
 misc/
 eda_playground.ipynb
+data_preparation_semantic_playground.ipynb
 .DS_Store
 streamlit/pages/archive/
 __pycache__
