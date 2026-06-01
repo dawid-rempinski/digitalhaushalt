@@ -290,6 +290,61 @@ if "Jahr" in df_sel.columns and df_sel["Jahr"].nunique() > 1:
     st.plotly_chart(fig_ts, use_container_width=True)
     st.markdown("---")
 
+# ── 4. LINGUISTIK VS. BUDGET (SCATTER) ────────────────────────────────────────
+st.subheader("Linguistische Komplexität im Verhältnis zum Budget")
+
+scatter_metric_label = st.selectbox(
+    "Metrik für das Streudiagramm wählen:",
+    list(AVAILABLE_METRICS.keys()),
+    key="sb_scatter_metric" 
+)
+active_scatter_col = AVAILABLE_METRICS[scatter_metric_label]
+
+st.markdown(f"""
+Dieses Diagramm setzt die sprachlichen Merkmale direkt in Beziehung zur Budgethöhe der einzelnen Titel. 
+Ausreißer **oben rechts** zeigen teure Posten mit gleichzeitig hoher Komplexität im Bereich **{scatter_metric_label}**.
+""")
+
+scatter_df = df_sel[df_sel[metric] > 0].copy()
+
+if len(scatter_df) > 0:
+    is_scatter_percentage = "quote" in scatter_metric_label.lower() or "dichte" in scatter_metric_label.lower()
+    
+    fig_scatter = px.scatter(
+        scatter_df,
+        x=active_scatter_col,  # Nutzt jetzt die eigene Auswahl
+        y=metric,
+        title=f"Verhältnis: {scatter_metric_label} vs. Budgethöhe",
+        labels={active_scatter_col: scatter_metric_label, metric: "Budget (Euro)"},
+        template="plotly_white",
+        color=active_scatter_col,
+        color_continuous_scale="Viridis",
+        hover_data={
+            title_col: True, 
+            metric: ":,.2f €", 
+            active_scatter_col: ":.2f%" if is_scatter_percentage else ":.1f"
+        },
+        opacity=0.6
+    )
+
+    fig_scatter.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            ticksuffix=" %" if is_scatter_percentage else "", 
+            showgrid=True, 
+            gridcolor="#eee"
+        ),
+        yaxis=dict(showgrid=True, gridcolor="#eee"),
+        height=600
+    )
+    
+    fig_scatter.update_traces(marker=dict(size=8))
+    
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.info("Keine Titel mit einem Budget größer als 0 € für die Streudiagramm-Analyse vorhanden.")
+
+st.markdown("---")
 
 # ── STYLE ─────────────────────────────────────────────────────────────────────
 st.markdown("""
