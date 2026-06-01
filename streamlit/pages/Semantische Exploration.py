@@ -95,6 +95,8 @@ if digital_only and "is_digital" in df_sel.columns:
 # ── 0. BEISPIEL-TITEL ─────────────────────────────────────────────────────────
 st.subheader("Beispiele für Titelstrukturen")
 
+st.markdown("**Per Klick auf eine Zeile können die Titeltexte vollständig eingesehen werden.**")
+
 df_sel["Länge des Titels"] = df_sel[title_col].astype(str).str.len()
 
 longest10 = (
@@ -117,8 +119,8 @@ st.caption("Die 10 längsten Titel (Komplexe Formulierungen)")
 st.dataframe(
     longest10,
     column_config={
-        title_col: st.column_config.TextColumn("Titeltext", width=1500),
-        "Länge des Titels": st.column_config.NumberColumn("Zeichen", format="%d", width=50)
+        title_col: st.column_config.TextColumn("Titeltext", width=800),
+        "Länge des Titels": st.column_config.NumberColumn("Zeichen", format="%d", width=20)
     },
     hide_index=True,
 )
@@ -129,8 +131,8 @@ st.caption("Die 10 kürzesten Titel (Prägnante Posten)")
 st.dataframe(
     shortest10,
     column_config={
-        title_col: st.column_config.TextColumn("Titeltext", width=1500),
-        "Länge des Titels": st.column_config.NumberColumn("Zeichen", format="%d", width=50)
+        title_col: st.column_config.TextColumn("Titeltext", width=800),
+        "Länge des Titels": st.column_config.NumberColumn("Zeichen", format="%d", width=20)
     },
     hide_index=True,
 )
