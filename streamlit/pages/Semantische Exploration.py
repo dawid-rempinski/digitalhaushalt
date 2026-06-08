@@ -3,6 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import re
+from pathlib import Path
 
 from core.data import _data
 from core.filters import _active_filters, _filter_data
@@ -11,7 +12,24 @@ from core.metric import _metric
 st.set_page_config(page_title="Einblicke", layout="wide", page_icon="🔎")
 
 # ── DATEN ─────────────────────────────────────────────────────────────────────
-df, T_TO_MRD, FILTER_COLS, num_cols, cat_cols, SOLL, IST = _data(file_path="data/transformed/digitalhaushalt_semantic_features.csv")
+df_sem, T_TO_MRD, FILTER_COLS, num_cols, cat_cols, SOLL, IST = _data(
+    file_path="data/transformed/digitalhaushalt_semantic_features.csv"
+)
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+file_path_kw = BASE_DIR / "data" / "transformed" / "digitalhaushalt_transformed_with_titel_text_and_extracted_keywords.csv"
+
+df_kw = pd.read_csv(
+    file_path_kw
+)
+
+JOIN_KEY = "id"
+
+df = df_sem.merge(
+    df_kw[[JOIN_KEY, "keywords"]],
+    on=JOIN_KEY,
+    how="left"
+)
 
 st.sidebar.header("⚙️ Einstellungen")
 
@@ -345,6 +363,92 @@ else:
     st.info("Keine Titel mit einem Budget größer als 0 € für die Streudiagramm-Analyse vorhanden.")
 
 st.markdown("---")
+
+# ── TOP 15 KEYWORDS ───────────────────────────────────────────────
+st.subheader("Top 15 Keywords nach Vorkommen im Datensatz")
+
+kw_col = "keywords"
+
+def parse_keywords(x):
+    if pd.isna(x):
+        return []
+    x = str(x)
+    return [p.strip() for p in x.split("|") if p.strip()]
+
+kw_series = df_sel[kw_col].apply(parse_keywords).explode()
+
+kw_series = kw_series.dropna()
+kw_series = kw_series[kw_series != ""]
+
+top15 = kw_series.value_counts().head(15)
+
+st.dataframe(
+    top15.reset_index(name="Anzahl").rename(columns={"index": "Schlagwort"}),
+    column_config={
+        "Schlagwort": st.column_config.TextColumn("Schlagwort", width=800),
+        "Anzahl": st.column_config.NumberColumn("Anzahl", format="%d", width=120)
+    },
+    use_container_width=True,
+    hide_index=True,
+    height=560
+)
+
+# ── KEYWORD HEATMAP ────────────────────────
+st.subheader(f"Keyword-Struktur nach {group_primary} (Top 15 nach Vorkommen im Datensatz)")
+
+kw_col = "keywords"
+
+if kw_col not in df_sel.columns:
+    st.error("Spalte 'keywords' fehlt im aktuellen DataFrame")
+    st.stop()
+
+df_kw = df_sel[[group_primary, kw_col]].copy()
+
+def parse_keywords(x):
+    if pd.isna(x):
+        return []
+    x = str(x).strip()
+    if not x:
+        return []
+    return [p.strip() for p in x.split("|") if p.strip()]
+
+df_kw["_kw"] = df_kw[kw_col].apply(parse_keywords)
+
+exploded = df_kw.explode("_kw").rename(columns={"_kw": "keyword"})
+exploded = exploded.dropna()
+
+exploded["keyword"] = exploded["keyword"].astype(str).str.strip()
+exploded = exploded[exploded["keyword"] != ""]
+
+top15 = exploded["keyword"].value_counts().head(15).index
+exploded = exploded[exploded["keyword"].isin(top15)]
+
+heat = (
+    exploded
+    .groupby([group_primary, "keyword"])
+    .size()
+    .reset_index(name="count")
+)
+
+pivot = heat.pivot_table(
+    index=group_primary,
+    columns="keyword",
+    values="count",
+    fill_value=0,
+    aggfunc="sum"
+)
+
+pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index]
+
+fig = px.imshow(
+    pivot,
+    aspect="auto",
+    color_continuous_scale="Blues",
+    title=f"Top 15 Keywords nach {group_primary}",
+    height=1000
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # ── STYLE ─────────────────────────────────────────────────────────────────────
 st.markdown("""
