@@ -17,10 +17,14 @@ def _active_filters(df, FILTER_COLS):
 
         opts = sorted(df_opts[col].dropna().astype(str).unique())
 
-        current = st.session_state.get(f"f_{col}", [])
-        current_valid = [v for v in current if v in opts]
+        current = st.session_state.get(f"f_{col}", None)
 
-        st.session_state[f"f_{col}"] = current_valid
+        if current is None:
+            st.session_state[f"f_{col}"] = ['2024'] if col == 'Jahr' and '2024' in opts else []
+            current_valid = st.session_state[f"f_{col}"]
+        else:
+            current_valid = [v for v in current if v in opts]
+            st.session_state[f"f_{col}"] = current_valid
 
         st.sidebar.multiselect(
             label=f"{col} ({len(opts)})",

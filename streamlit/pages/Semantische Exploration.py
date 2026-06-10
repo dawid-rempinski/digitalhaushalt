@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import re
 from pathlib import Path
+import numpy as np
 
 from core.data import _data
 from core.filters import _active_filters, _filter_data
@@ -12,23 +13,8 @@ from core.metric import _metric
 st.set_page_config(page_title="Einblicke", layout="wide", page_icon="🔎")
 
 # ── DATEN ─────────────────────────────────────────────────────────────────────
-df_sem, T_TO_MRD, FILTER_COLS, num_cols, cat_cols, SOLL, IST = _data(
+df, T_TO_MRD, FILTER_COLS, num_cols, cat_cols, SOLL, IST = _data(
     file_path="data/transformed/digitalhaushalt_semantic_features.csv"
-)
-
-BASE_DIR = Path(__file__).resolve().parents[2]
-file_path_kw = BASE_DIR / "data" / "transformed" / "digitalhaushalt_transformed_with_titel_text_and_extracted_keywords.csv"
-
-df_kw = pd.read_csv(
-    file_path_kw
-)
-
-JOIN_KEY = "id"
-
-df = df_sem.merge(
-    df_kw[[JOIN_KEY, "keywords"]],
-    on=JOIN_KEY,
-    how="left"
 )
 
 st.sidebar.header("⚙️ Einstellungen")
@@ -449,6 +435,194 @@ fig = px.imshow(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("---")
+
+# ── KEYWORD AUSSCHÖPFUNG ───────────────────────────────────────────────────────
+st.subheader("Ausschöpfungsquote nach Keyword")
+
+df_kw_aus = df_sel[[kw_col, SOLL, IST]].copy()
+df_kw_aus[SOLL] = pd.to_numeric(df_kw_aus[SOLL], errors='coerce')
+df_kw_aus[IST]  = pd.to_numeric(df_kw_aus[IST],  errors='coerce')
+df_kw_aus = df_kw_aus[df_kw_aus[SOLL] > 0].copy()
+df_kw_aus['ausschoepfung'] = df_kw_aus[IST] / df_kw_aus[SOLL]
+df_kw_aus['_kw'] = df_kw_aus[kw_col].apply(parse_keywords)
+
+df_kw_aus_exp = (
+    df_kw_aus.explode('_kw')
+    .rename(columns={'_kw': 'keyword'})
+    .dropna(subset=['keyword', 'ausschoepfung'])
+)
+df_kw_aus_exp['keyword'] = df_kw_aus_exp['keyword'].str.strip()
+df_kw_aus_exp = df_kw_aus_exp[df_kw_aus_exp['keyword'] != '']
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    min_titel = st.slider("Mindestanzahl Titel pro Keyword", min_value=1, max_value=20, value=5, key="sl_min_titel")
+with c2:
+    sort_metric = st.radio("Sortieren nach", ["Gewichteter Durchschnitt", "Einfacher Durchschnitt"], horizontal=True, key="rb_aus")
+    st.caption(
+        "**Gewichteter Durchschnitt:** Titel mit hohem Budget haben mehr Einfluss auf den Wert. "
+        "Beispiel: Ein Titel mit 50 Mio. € zählt stärker als zehn Titel mit je 100.000 €. "
+        "→ Zeigt, wie gut das Geld insgesamt ausgeschöpft wurde.\n\n"
+        "**Einfacher Durchschnitt:** Jeder Titel zählt gleich, egal wie groß. "
+        "→ Zeigt, ob ein Keyword strukturell oft mit schlechter oder guter Ausschöpfung vorkommt."
+    )
+with c3:
+    show_bottom = st.toggle("Bottom 20 anzeigen", value=False, key="tg_bottom")
+
+sort_col = 'gewichteter_avg' if sort_metric == "Gewichteter Durchschnitt" else 'avg_ausschoepfung'
+
+kw_stats = df_kw_aus_exp.groupby('keyword').apply(
+    lambda g: pd.Series({
+        'n_titel': len(g),
+        'avg_ausschoepfung': g['ausschoepfung'].mean(),
+        'gewichteter_avg': np.nansum(g['ausschoepfung'] * g[SOLL]) / np.nansum(g[SOLL]) if np.nansum(g[SOLL]) > 0 else np.nan,
+    })
+).reset_index()
+
+kw_filtered = (
+    kw_stats[kw_stats['n_titel'] >= min_titel]
+    .dropna(subset=[sort_col])
+)
+
+kw_stats_top = kw_filtered.sort_values(sort_col, ascending=False).head(20)
+kw_stats_bottom = kw_filtered.sort_values(sort_col, ascending=True).head(20)
+
+kw_display = kw_stats_bottom if show_bottom else kw_stats_top
+chart_title = (
+    f"Bottom 20 Keywords nach Ausschöpfungsquote ({sort_metric}, mind. {min_titel} Titel)"
+    if show_bottom else
+    f"Top 20 Keywords nach Ausschöpfungsquote ({sort_metric}, mind. {min_titel} Titel)"
+)
+
+fig_aus = px.bar(
+    kw_display,
+    x=sort_col,
+    y='keyword',
+    orientation='h',
+    title=chart_title,
+    labels={sort_col: "Ausschöpfungsquote", 'keyword': ''},
+    template="plotly_white",
+    color=sort_col,
+    color_continuous_scale="Blues" if not show_bottom else "Reds_r",
+    hover_data=['n_titel', 'avg_ausschoepfung', 'gewichteter_avg']
+)
+fig_aus.add_vline(
+    x=1.0, line_dash="dash", line_color="#ffd640", line_width=2,
+    annotation_text="100%", annotation_position="top right"
+)
+fig_aus.update_layout(
+    plot_bgcolor="rgba(0,0,0,0)",
+    yaxis={'categoryorder': 'total ascending' if not show_bottom else 'total descending'},
+    xaxis=dict(tickformat='.0%'),
+    height=800
+)
+st.plotly_chart(fig_aus, use_container_width=True)
+
+st.markdown("---")
+
+# ── KEYWORD AUSSCHÖPFUNG ZEITREIHE ────────────────────────────────────────────
+st.subheader("Keyword Ausschöpfung über Zeit — Schwankungsanalyse")
+
+if "Jahr" not in df_sel.columns or df_sel["Jahr"].nunique() < 2:
+    st.info("Zeitreihenanalyse benötigt mindestens 2 Jahre im gefilterten Datensatz.")
+else:
+    df_kw_ts = df_sel[[kw_col, SOLL, IST, "Jahr"]].copy()
+    df_kw_ts[SOLL] = pd.to_numeric(df_kw_ts[SOLL], errors='coerce')
+    df_kw_ts[IST]  = pd.to_numeric(df_kw_ts[IST],  errors='coerce')
+    df_kw_ts = df_kw_ts[df_kw_ts[SOLL] > 0].copy()
+    df_kw_ts['ausschoepfung'] = df_kw_ts[IST] / df_kw_ts[SOLL]
+    df_kw_ts['_kw'] = df_kw_ts[kw_col].apply(parse_keywords)
+
+    df_kw_ts_exp = (
+        df_kw_ts.explode('_kw')
+        .rename(columns={'_kw': 'keyword'})
+        .dropna(subset=['keyword', 'ausschoepfung', 'Jahr'])
+    )
+    df_kw_ts_exp['keyword'] = df_kw_ts_exp['keyword'].str.strip()
+    df_kw_ts_exp = df_kw_ts_exp[df_kw_ts_exp['keyword'] != '']
+
+    ts_stats = (
+        df_kw_ts_exp.groupby(['keyword', 'Jahr'])
+        .agg(avg_aus=('ausschoepfung', 'mean'), n=('ausschoepfung', 'count'))
+        .reset_index()
+    )
+
+    kw_year_counts = ts_stats[ts_stats['n'] >= min_titel].groupby('keyword')['Jahr'].nunique()
+    valid_kws = kw_year_counts[kw_year_counts >= 2].index
+    ts_stats = ts_stats[ts_stats['keyword'].isin(valid_kws)]
+
+    from scipy.stats import linregress
+
+    def trend_slope(g):
+        g = g.sort_values('Jahr')
+        if len(g) < 2:
+            return np.nan
+        return linregress(g['Jahr'].astype(int), g['avg_aus']).slope
+
+    trend = (
+        ts_stats.groupby('keyword')
+        .apply(trend_slope)
+        .reset_index()
+        .rename(columns={0: 'slope'})
+        .dropna()
+        .sort_values('slope')
+    )
+
+    top_n_trend = st.slider("Top N Keywords pro Richtung", min_value=3, max_value=10, value=5, key="sl_trend")
+
+    top_rising  = trend.tail(top_n_trend).sort_values('slope', ascending=True)['keyword'].tolist()
+    top_falling = trend.head(top_n_trend).sort_values('slope', ascending=False)['keyword'].tolist()
+
+    for keywords, label, palette in [
+        (top_rising,  "📈 Stärkster Anstieg der Ausschöpfung über Zeit",  px.colors.sequential.Greens),
+        (top_falling, "📉 Stärkster Rückgang der Ausschöpfung über Zeit", px.colors.sequential.Reds),
+    ]:
+        ts_p = ts_stats[ts_stats['keyword'].isin(keywords)].copy()
+        ts_p['Jahr'] = ts_p['Jahr'].astype(int)
+        ts_p['avg_aus_pct'] = ts_p['avg_aus'] * 100
+
+        first_last = (
+            ts_p.groupby('keyword')
+            .apply(lambda g: g.sort_values('Jahr').iloc[-1]['avg_aus_pct'] - g.sort_values('Jahr').iloc[0]['avg_aus_pct'])
+            .reset_index()
+            .rename(columns={0: 'diff'})
+        )
+        diff_map = dict(zip(first_last['keyword'], first_last['diff']))
+        slope_map = dict(zip(trend['keyword'], trend['slope']))
+        ts_p['keyword_label'] = ts_p['keyword'].map(
+            lambda k: f"{k} ({diff_map.get(k, 0):+.0f}%)"
+        )
+
+        ascending = (label == "📉 Stärkster Rückgang der Ausschöpfung über Zeit")
+        label_order = (
+            ts_p[['keyword', 'keyword_label']]
+            .drop_duplicates()
+            .assign(slope=lambda x: x['keyword'].map(slope_map))
+            .sort_values('slope', ascending=ascending)
+            ['keyword_label']
+            .tolist()
+        )
+
+        fig = px.line(
+            ts_p, x='Jahr', y='avg_aus_pct', color='keyword_label', markers=True,
+            title=label,
+            labels={'avg_aus_pct': 'Ø Ausschöpfung (%)', 'Jahr': 'Jahr', 'keyword_label': 'Keyword'},
+            template="plotly_white", height=450,
+            color_discrete_sequence=px.colors.qualitative.D3,
+            category_orders={'keyword_label': label_order}
+        )
+        fig.add_hline(y=100, line_dash="dash", line_color="#ffd640", line_width=2,
+                    annotation_text="100%", annotation_position="right")
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showgrid=False, tickmode="linear"),
+            yaxis=dict(showgrid=True, gridcolor="#eee", ticksuffix=" %"),
+            hovermode="x unified",
+            height=650
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # ── STYLE ─────────────────────────────────────────────────────────────────────
 st.markdown("""
