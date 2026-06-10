@@ -7,7 +7,7 @@ def _data(file_path: Path = None):
     def get_data(file_path: Path = None):
         BASE_DIR = Path(__file__).resolve().parents[2]
         if file_path is None:
-            file_path = BASE_DIR / "data" / "transformed" / "digitalhaushalt_transformed.csv"
+            file_path = BASE_DIR / "data" / "transformed" / "digitalhaushalt_transformed_with_titel_text_and_extracted_keywords_cleaned.csv"
         else:
             file_path = BASE_DIR / file_path
         df = pd.read_csv(file_path)
