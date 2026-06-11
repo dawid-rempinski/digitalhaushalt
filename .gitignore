@@ -1,8 +1,7 @@
+PIPELINE.md
 .venv/
-data/raw/
-misc/
-eda_playground.ipynb
-data_preparation_semantic_playground.ipynb
+__pycache__/
 .DS_Store
+data/raw/digitalhaushalt_raw.csv
+archive/
 streamlit/pages/archive/
-__pycache__
