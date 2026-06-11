@@ -36,4 +36,3 @@ python -m spacy download de_core_news_sm
 - `data/raw/` — inputs (Agora export, yearly HH files, mapping tables)
 - `data/transformed/` — pipeline outputs
 - `streamlit/` — dashboard
-- `docs/` — reference PDFs (studies, plans)
